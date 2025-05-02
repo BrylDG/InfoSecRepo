@@ -71,7 +71,7 @@ def receive_file(sock, remote_path):
 
 def main():
     HOST_IP = "0.0.0.0"  # Listen on all interfaces
-    HOST_PORT = 8008
+    HOST_PORT = 3306
 
     # Set up server socket
     server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)

